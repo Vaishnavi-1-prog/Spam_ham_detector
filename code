@@ -1,80 +1,57 @@
+#this code is entirely done in google colab
 import pandas as pd
-import numpy as np
-import re
-import string
-import nltk
 from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import accuracy_score, classification_report
-from nltk.corpus import stopwords
-from nltk.stem import PorterStemmer
 
-# Download stopwords if not already present
-nltk.download('stopwords')
+# 1. Load and Preprocess the Dataset
+from google.colab import files
+uploaded = files.upload()
 
-# Mount Google Drive to access the dataset
-from google.colab import drive
-drive.mount('/content/drive')
+# Load the dataset (replace with your uploaded file name)
+file_path = "spam.csv"
+df = pd.read_csv(file_path, encoding='ISO-8859-1')
 
-# Load dataset from Google Drive
-df = pd.read_csv('/content/drive/My Drive/datasets/spam_ham_dataset.csv', encoding='latin-1')
+# Rename columns and keep only the relevant ones
+df = df.rename(columns={'v1': 'label', 'v2': 'text'})
+df = df[['label', 'text']]
 
-# Check the column names of the dataset
-print(df.columns)
-
-# Drop the unnecessary 'Unnamed: 0' and 'label_num' columns
-df = df[['label', 'text']]  # Keep only 'label' and 'text'
-df.columns = ['label', 'message']  # Rename 'text' to 'message'
-
-# Convert labels: 'spam' -> 1, 'ham' -> 0
+# Encode the labels (ham=0, spam=1)
 df['label'] = df['label'].map({'ham': 0, 'spam': 1})
 
-# Initialize stemmer and stopwords
-stemmer = PorterStemmer()
-stop_words = set(stopwords.words('english'))
+# 2. Split the Dataset
+X = df['text']  # Features
+y = df['label']  # Labels
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
 
-def preprocess_text(text):
-    """Function to preprocess text: lowercasing, removing digits, punctuation, stopwords, and stemming."""
-    text = text.lower()  # Convert to lowercase
-    text = re.sub(r'\d+', '', text)  # Remove numbers
-    text = text.translate(str.maketrans('', '', string.punctuation))  # Remove punctuation
-    words = text.split()  # Tokenize
-    words = [stemmer.stem(word) for word in words if word not in stop_words]  # Stemming & stopword removal
-    return ' '.join(words)
+# 3. Vectorize the Text Data
+vectorizer = CountVectorizer()
+X_train_vec = vectorizer.fit_transform(X_train)  # Train vectorized
+X_test_vec = vectorizer.transform(X_test)  # Test vectorized
 
-# Apply preprocessing to the dataset
-df['clean_message'] = df['message'].apply(preprocess_text)
-
-# Split data into training and testing sets (80% training, 20% testing)
-X_train, X_test, y_train, y_test = train_test_split(df['clean_message'], df['label'], test_size=0.2, random_state=42)
-
-# Convert text into numerical features using TF-IDF
-vectorizer = TfidfVectorizer(max_features=5000)  # Limit to top 5000 features
-X_train_tfidf = vectorizer.fit_transform(X_train)
-X_test_tfidf = vectorizer.transform(X_test)
-
-# Train the model using Multinomial Naive Bayes
+# 4. Train the Model
 model = MultinomialNB()
-model.fit(X_train_tfidf, y_train)
+model.fit(X_train_vec, y_train)
 
-# Make predictions on the test set
-y_pred = model.predict(X_test_tfidf)
+# 5. Evaluate the Model
+y_pred = model.predict(X_test_vec)
+print("Model Evaluation:")
+print("Accuracy:", accuracy_score(y_test, y_pred))
+print("Classification Report:\n", classification_report(y_test, y_pred))
 
-# Calculate and display accuracy
-accuracy = accuracy_score(y_test, y_pred)
-print(f'Accuracy: {accuracy:.4f}')
+# 6. Real-Time Email Classification
+def classify_email(email_text):
+    email_vec = vectorizer.transform([email_text])  # Vectorize the input email
+    prediction = model.predict(email_vec)  # Predict the label
+    return "Spam" if prediction[0] == 1 else "Ham (Normal)"
 
-# Print detailed classification report
-print(classification_report(y_test, y_pred))
+# 7. Continuous Real-Time Classification
+while True:
+    user_email = input("\nEnter the email text to classify (or type 'exit' to quit): ")
+    if user_email.lower() == 'exit':
+        print("Exiting the classifier.")
+        break
+    result = classify_email(user_email)
+    print(f"The email is classified as: {result}")
 
-# Function to predict if a given email is spam or not
-def predict_spam(email_text):
-    email_text = preprocess_text(email_text)  # Preprocess the text
-    email_vector = vectorizer.transform([email_text])  # Convert to TF-IDF
-    prediction = model.predict(email_vector)  # Predict spam or ham
-    return 'Spam' if prediction[0] == 1 else 'Ham'
-
-# Example usage: Allow user to input their own email text
-new_email = input("Enter your email text: ")  # Take user input for email text
-print(f"Prediction: {predict_spam(new_email)}")  # Output: Spam or Ham
